@@ -1,0 +1,22 @@
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Backend
+backend/data/
+backend/__pycache__/
+backend/static/uploads/
+backend/*.bak*
+backend/database.db
+backend/email_config.json
+backend/add_software_slug.py
+backend/fix_all.py
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+backend/.mcp_key

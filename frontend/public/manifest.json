@@ -1,0 +1,10 @@
+{
+  "name": "Just4Tech",
+  "short_name": "Just4Tech",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#d55c3a",
+  "description": "Indie dev stories, AI tools, and vibe-coded projects.",
+  "icons": []
+}

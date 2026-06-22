@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://just4.tech/sitemap.xml
