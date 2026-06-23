@@ -42,7 +42,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-            "cd /home/ubuntu/aitoolhub-admin && pip install -r requirements.txt"
+            "cd /home/ubuntu/aitoolhub-admin && sudo pip install -r requirements.txt"
 
       - name: Ensure API_KEY in systemd env
         run: |
@@ -65,4 +65,13 @@ jobs:
       - name: Restart backend
         run: |
           ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-            "sudo systemctl restart aitoolhub-admin && sleep 2 && curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8083/api/posts"
+            "sudo systemctl restart aitoolhub-admin && sleep 2 && \
+             HTTP_CODE=\$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8083/api/posts); \
+             if [ \"\$HTTP_CODE\" != \"200\" ]; then \
+               echo 'Service failed to start. Checking logs...'; \
+               sudo journalctl -u aitoolhub-admin --no-pager -n 20; \
+               sudo systemctl status aitoolhub-admin --no-pager; \
+               echo \"HTTP status: \$HTTP_CODE\"; \
+               exit 1; \
+             fi; \
+             echo \"OK (HTTP \$HTTP_CODE)\""
