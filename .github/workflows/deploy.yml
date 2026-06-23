@@ -40,6 +40,19 @@ jobs:
           rsync -avz backend/ ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/home/ubuntu/aitoolhub-admin/ \
             --exclude '__pycache__' --exclude '*.bak*' --exclude 'data/' --exclude 'static/uploads'
 
+      - name: Install Python dependencies
+        run: |
+          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            "cd /home/ubuntu/aitoolhub-admin && pip install -r requirements.txt"
+
+      - name: Ensure API_KEY in systemd env
+        run: |
+          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            "sudo mkdir -p /etc/systemd/system/aitoolhub-admin.service.d && \
+             echo '[Service]' | sudo tee /etc/systemd/system/aitoolhub-admin.service.d/override.conf && \
+             echo 'Environment=\"API_KEY=${{ secrets.API_KEY }}\"' | sudo tee -a /etc/systemd/system/aitoolhub-admin.service.d/override.conf && \
+             sudo systemctl daemon-reload"
+
       - name: Restart backend
         run: |
           ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
