@@ -81,7 +81,6 @@ async function changeUsername() {
     if (data.ok) {
       usernameMsg.value = `Username changed to "${data.username}"`
       usernameOk.value = true
-      localStorage.setItem('admin_username', data.username)
       usernameForm.value = { newUsername: '', password: '' }
     } else {
       usernameMsg.value = data.error || 'Failed to change username'

@@ -1,8 +1,7 @@
-import hashlib
 import uuid
 import json
 import os as _os
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from functools import wraps
 
 from fastapi import FastAPI, Request, HTTPException, Header
@@ -13,7 +12,12 @@ from jinja2 import Environment, FileSystemLoader
 from database import get_db, init_db
 
 # ===== API Key Auth for machine-to-machine calls =====
-API_KEY = _os.environ.get("API_KEY", _os.environ.get("MCP_API_KEY", "jt_3d131433a024091be331d28962628abe06f89331"))
+API_KEY = _os.environ.get("API_KEY", _os.environ.get("MCP_API_KEY"))
+if not API_KEY:
+    raise RuntimeError(
+        "API_KEY environment variable is required. "
+        "Generate one with: python3 -c 'import secrets; print(secrets.token_hex(24))'"
+    )
 
 def require_api_key(request: Request):
     """Check X-API-Key header for machine-to-machine access."""
@@ -39,9 +43,51 @@ def api_key_required(func):
 
 app = FastAPI(title="AI Tool Hub Admin")
 
+# ── Simple response cache (module-level, TTL-based) ──
+_cache = {}
+def cached(key: str, ttl_seconds: int = 300):
+    """Decorator: cache response for `ttl_seconds`. Keyed by `key`."""
+    def decorator(func):
+        async def wrapper(*args, **kwargs):
+            entry = _cache.get(key)
+            if entry and (datetime.now() - entry["ts"]).total_seconds() < ttl_seconds:
+                return entry["data"]
+            result = await func(*args, **kwargs)
+            _cache[key] = {"ts": datetime.now(), "data": result}
+            return result
+        return wrapper
+    return decorator
+
+def invalidate_cache(*keys: str):
+    """Invalidate cache entries by key (e.g., on content change)."""
+    for k in keys:
+        _cache.pop(k, None)
+
+# ── Simple in-memory rate limiter ──
+_rate_limits = {}
+def check_rate_limit(key: str, max_requests: int = 10, window_seconds: int = 60) -> bool:
+    """Return True if request is allowed, False if rate-limited."""
+    now = datetime.now()
+    entry = _rate_limits.get(key)
+    if entry:
+        count, start = entry
+        if (now - start).total_seconds() < window_seconds:
+            if count >= max_requests:
+                return False
+            _rate_limits[key] = (count + 1, start)
+        else:
+            _rate_limits[key] = (1, now)
+    else:
+        _rate_limits[key] = (1, now)
+    return True
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://just4.tech",
+        "https://www.just4.tech",
+    ],
+    allow_origin_regex=r"^https?://localhost(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -55,14 +101,62 @@ def render(template_name, **context):
     template = _jinja_env.get_template(template_name)
     return HTMLResponse(template.render(**context))
 
-SESSIONS = {}
+SESSIONS = {}       # token -> {username, expires_at}
 
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
+SESSION_TTL = 86400 * 7  # 7 days
 
 def check_session(request):
     token = request.cookies.get("session")
-    return SESSIONS.get(token)
+    if not token:
+        return None
+    entry = SESSIONS.get(token)
+    if not entry:
+        return None
+    if datetime.now() > entry["expires_at"]:
+        del SESSIONS[token]
+        return None
+    return entry["username"]
+
+def _cleanup_expired_sessions():
+    """Remove expired sessions. Called on login to avoid a background task."""
+    now = datetime.now()
+    expired = [t for t, e in SESSIONS.items() if now > e["expires_at"]]
+    for t in expired:
+        del SESSIONS[t]
+
+def hash_password(password):
+    """Hash password with bcrypt. Falls back to salted SHA-256 only if bcrypt is unavailable."""
+    try:
+        import bcrypt
+        _hash_password.bcrypt = bcrypt
+        _hash_password.use_bcrypt = True
+    except ImportError:
+        _hash_password.use_bcrypt = False
+
+    if _hash_password.use_bcrypt:
+        return _hash_password.bcrypt.hashpw(password.encode(), _hash_password.bcrypt.gensalt()).decode()
+    else:
+        import hashlib
+        import os as _os
+        salt = _os.urandom(32).hex()
+        return "sha256$" + salt + "$" + hashlib.sha256((salt + password).encode()).hexdigest()
+
+_hash_password.use_bcrypt = None
+_hash_password.bcrypt = None
+
+def verify_password(password, stored_hash):
+    """Verify a password against a stored hash. Supports bcrypt and salted SHA-256 (legacy)."""
+    if stored_hash.startswith("$2b$") or stored_hash.startswith("$2a$"):
+        import bcrypt
+        return bcrypt.checkpw(password.encode(), stored_hash.encode())
+    elif stored_hash.startswith("sha256$"):
+        import hashlib
+        _, salt, h = stored_hash.split("$")
+        return hashlib.sha256((salt + password).encode()).hexdigest() == h
+    else:
+        # Legacy: unsalted SHA-256
+        import hashlib
+        return hashlib.sha256(password.encode()).hexdigest() == stored_hash
 
 @app.middleware("http")
 async def track_views(request: Request, call_next):
@@ -97,7 +191,7 @@ async def api_change_username(request: Request):
         return JSONResponse({"ok": False, "error": "Username must be at least 3 characters"})
     conn = get_db()
     row = conn.execute("SELECT * FROM users WHERE username = ?", (user,)).fetchone()
-    if not row or row["password_hash"] != hash_password(password):
+    if not row or not verify_password(password, row["password_hash"]):
         conn.close()
         return JSONResponse({"ok": False, "error": "Password is incorrect"})
     # Check if new username exists
@@ -109,7 +203,9 @@ async def api_change_username(request: Request):
     conn.commit()
     conn.close()
     # Update session
-    SESSIONS[request.cookies.get("session", "")] = new_username
+    token = request.cookies.get("session", "")
+    if token in SESSIONS:
+        SESSIONS[token]["username"] = new_username
     return JSONResponse({"ok": True, "username": new_username})
 
 @app.post("/api/admin/change-password")
@@ -124,7 +220,7 @@ async def api_change_password(request: Request):
         return JSONResponse({"ok": False, "error": "New password must be at least 6 characters"})
     conn = get_db()
     row = conn.execute("SELECT * FROM users WHERE username = ?", (user,)).fetchone()
-    if not row or row["password_hash"] != hash_password(old_pw):
+    if not row or not verify_password(old_pw, row["password_hash"]):
         conn.close()
         return JSONResponse({"ok": False, "error": "Current password is incorrect"})
     conn.execute("UPDATE users SET password_hash = ? WHERE username = ?", (hash_password(new_pw), user))
@@ -134,17 +230,22 @@ async def api_change_password(request: Request):
 
 @app.post("/api/admin/login")
 async def api_admin_login(request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    if not check_rate_limit(f"login:{client_ip}", max_requests=5, window_seconds=60):
+        raise HTTPException(status_code=429, detail="Too many login attempts. Try again later.")
     data = await request.json()
     username = data.get("username")
     password = data.get("password")
     conn = get_db()
     user = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
     conn.close()
-    if user and user["password_hash"] == hash_password(password):
+    if user and verify_password(password, user["password_hash"]):
+        _cleanup_expired_sessions()
         token = uuid.uuid4().hex
-        SESSIONS[token] = username
+        SESSIONS[token] = {"username": username, "expires_at": datetime.now() + timedelta(seconds=SESSION_TTL)}
         resp = JSONResponse({"ok": True})
-        resp.set_cookie(key="session", value=token, httponly=True, max_age=86400*7, path="/")
+        secure = not _os.environ.get("DEV_MODE", "").lower() in ("1", "true", "yes")
+        resp.set_cookie(key="session", value=token, httponly=True, secure=secure, samesite='lax', max_age=86400*7, path="/")
         return resp
     return JSONResponse({"ok": False, "error": "Invalid username or password"}, status_code=401)
 
@@ -153,20 +254,35 @@ async def api_admin_logout():
     return JSONResponse({"ok": True})
 
 @app.get("/api/posts")
-async def api_posts(request: Request, status: str = ""):
+async def api_posts(request: Request, status: str = "", page: int = 0, limit: int = 20):
     conn = get_db()
     user = check_session(request)
+
+    base_query = "FROM posts"
+    params = []
     if status:
         if status == "all":
-            posts = conn.execute("SELECT * FROM posts ORDER BY created_at DESC").fetchall()
+            base_query += " ORDER BY created_at DESC"
         else:
-            posts = conn.execute("SELECT * FROM posts WHERE status = ? ORDER BY created_at DESC", (status,)).fetchall()
+            base_query += " WHERE status = ? ORDER BY created_at DESC"
+            params.append(status)
     elif user or require_api_key(request):
-        posts = conn.execute("SELECT * FROM posts ORDER BY created_at DESC").fetchall()
+        base_query += " ORDER BY created_at DESC"
     else:
-        posts = conn.execute("SELECT * FROM posts WHERE status = 'active' ORDER BY created_at DESC").fetchall()
-    conn.close()
-    return [dict(p) for p in posts]
+        base_query += " WHERE status = 'active' ORDER BY created_at DESC"
+
+    # Pagination: page=0 means all (backward compatible)
+    if page > 0:
+        offset = (page - 1) * limit
+        count_row = conn.execute(f"SELECT COUNT(*) as cnt {base_query}", params).fetchone()
+        total = count_row["cnt"]
+        rows = conn.execute(f"SELECT * {base_query} LIMIT ? OFFSET ?", params + [limit, offset]).fetchall()
+        conn.close()
+        return {"posts": [dict(r) for r in rows], "total": total, "page": page, "limit": limit}
+    else:
+        rows = conn.execute(f"SELECT * {base_query}", params).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
 
 @app.get("/api/posts/{post_id}")
 async def api_post(post_id: int, request: Request):
@@ -211,6 +327,7 @@ async def api_create_post(request: Request):
     conn.commit()
     post_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     conn.close()
+    invalidate_cache("rss_feed", "sitemap")
     return {"ok": True, "id": post_id}
 
 @app.put("/api/posts/{post_id}")
@@ -244,6 +361,7 @@ async def api_update_post(post_id: int, request: Request):
     ))
     conn.commit()
     conn.close()
+    invalidate_cache("rss_feed", "sitemap")
     return {"ok": True}
 
 @app.delete("/api/posts/{post_id}")
@@ -255,6 +373,7 @@ async def api_delete_post(post_id: int, request: Request):
     conn.execute("DELETE FROM posts WHERE id = ?", (post_id,))
     conn.commit()
     conn.close()
+    invalidate_cache("rss_feed", "sitemap")
     return {"ok": True}
 
 @app.get("/api/stats/overview")
@@ -469,8 +588,6 @@ async def api_get_analytics(request: Request):
         "top_pages": [{"path": r["path"], "count": r["cnt"]} for r in top_pages]
     }
 
-# ===================== PROJECTS ADMIN ROUTES =====================
-
 # ===================== PUBLIC SOFTWARE ROUTES =====================
 
 @app.get("/software/", response_class=HTMLResponse)
@@ -516,15 +633,6 @@ async def api_get_stats():
     conn.close()
     return stats
 
-@app.get("/api/pages/{slug}")
-async def api_get_page(slug: str):
-    conn = get_db()
-    page = conn.execute("SELECT * FROM site_pages WHERE slug = ?", (slug,)).fetchone()
-    conn.close()
-    if not page:
-        raise HTTPException(404)
-    return dict(page)
-
 # Public page rendering
 @app.get("/page/{slug}", response_class=HTMLResponse)
 async def public_page(request: Request, slug: str):
@@ -539,12 +647,12 @@ async def public_page(request: Request, slug: str):
 
 # ===================== CONTENT BLOCKS (Page Content Editor) =====================
 
-@app.get("/api/content/pages/list")
 @app.get("/api/admin/session-status")
 async def admin_session_status(request: Request):
     user = check_session(request)
     return {"authenticated": user is not None, "user": user}
 
+@app.get("/api/content/pages/list")
 async def api_content_pages_list():
     conn = get_db()
     rows = conn.execute("SELECT DISTINCT page_path FROM content_blocks ORDER BY page_path").fetchall()
@@ -632,9 +740,7 @@ async def api_contact(request: Request):
         "feedback": "Feedback", "other": "Other",
     }
     subject_label = subject_labels.get(subject_key, "General Inquiry")
-    import sqlite3
-    conn = sqlite3.connect("/home/ubuntu/aitoolhub-admin/data/aitoolhub.db")
-    conn.execute("CREATE TABLE IF NOT EXISTS contact_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, email TEXT, subject TEXT, message TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+    conn = get_db()
     conn.execute("INSERT INTO contact_messages (name, email, subject, message) VALUES (?,?,?,?)", (name, email, subject_label, msg_body))
     conn.commit()
     conn.close()
@@ -673,6 +779,7 @@ async def api_update_post_by_slug(slug: str, request: Request):
     conn.execute(f"UPDATE posts SET {', '.join(fields)}, updated_at=CURRENT_TIMESTAMP WHERE slug=?", values)
     conn.commit()
     conn.close()
+    invalidate_cache("rss_feed", "sitemap")
     return {"ok": True}
 
 @app.delete("/api/posts/slug/{slug}")
@@ -684,13 +791,8 @@ async def api_delete_post_by_slug(slug: str, request: Request):
     conn.execute("DELETE FROM posts WHERE slug=?", (slug,))
     conn.commit()
     conn.close()
+    invalidate_cache("rss_feed", "sitemap")
     return {"ok": True, "slug": slug}
-
-# ======== Slug-Based Software Operations ========
-
-
-# ======== Slug-Based Tool Operations ========
-# ======== Pages Listing (content_blocks) ========
 
 # ===================== IMAGE UPLOAD =====================
 
@@ -730,6 +832,7 @@ async def api_upload_image(request: Request):
         return JSONResponse({"ok": False, "error": str(e)})
 
 @app.get("/rss.xml", response_class=Response)
+@cached("rss_feed", ttl_seconds=600)
 async def rss_feed():
     conn = get_db()
     posts = conn.execute("SELECT * FROM posts WHERE status='active' ORDER BY created_at DESC LIMIT 20").fetchall()
@@ -804,14 +907,14 @@ async def api_delete_media(filename: str, request: Request):
     return {"ok": True}
 
 @app.get("/sitemap.xml", response_class=Response)
+@cached("sitemap", ttl_seconds=900)
 async def sitemap():
-    import sqlite3
-    from datetime import date
     conn = get_db()
     posts = conn.execute("SELECT slug, updated_at FROM posts WHERE status='active' AND category NOT IN ('AI Tool','Project','Indie Dev') ORDER BY updated_at DESC").fetchall()
     software = conn.execute("SELECT slug, updated_at FROM posts WHERE status='active' AND category='AI Tool' ORDER BY updated_at DESC").fetchall()
     projects = conn.execute("SELECT slug, updated_at FROM posts WHERE status='active' AND category='Project' ORDER BY updated_at DESC").fetchall()
     indie_devs = conn.execute("SELECT slug, updated_at FROM posts WHERE status='active' AND category='Indie Dev' ORDER BY updated_at DESC").fetchall()
+    sites_posts = conn.execute("SELECT slug, updated_at FROM posts WHERE status='active' AND category='Site' ORDER BY updated_at DESC").fetchall()
     conn.close()
 
     lines = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
@@ -840,7 +943,6 @@ async def sitemap():
         updated = (d["updated_at"] or "")[:10] or date.today().isoformat()
         lines.append(f"  <url><loc>https://just4.tech/blog/{d['slug']}</loc><lastmod>{updated}</lastmod><priority>0.5</priority></url>")
 
-    sites_posts = conn.execute("SELECT slug, updated_at FROM posts WHERE status='active' AND category='Site' ORDER BY updated_at DESC").fetchall()
     for s in sites_posts:
         updated = (s["updated_at"] or "")[:10] or date.today().isoformat()
         lines.append(f"  <url><loc>https://just4.tech/sites/{s['slug']}</loc><lastmod>{updated}</lastmod><priority>0.6</priority></url>")

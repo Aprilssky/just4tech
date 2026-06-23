@@ -20,6 +20,7 @@ jobs:
         run: |
           cd frontend
           npm ci
+          npx puppeteer browsers install chrome 2>/dev/null || true
           npm run build
 
       - name: Setup SSH

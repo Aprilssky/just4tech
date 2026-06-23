@@ -59,19 +59,23 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { usePageMeta } from '../utils/meta.js'
 import { useRoute } from 'vue-router'
 import IconDisplay from '../components/IconDisplay.vue'
-import { marked } from 'marked'
+
+let markedModule = null
+async function getMarked() {
+  if (!markedModule) {
+    markedModule = await import('marked')
+  }
+  return markedModule.marked
+}
 
 const route = useRoute()
 const slug = route.params.slug
 const item = ref({})
-
-const rendered = computed(() => {
-  try { return marked(item.value.content || '') } catch { return '' }
-})
+const rendered = ref('')
 
 onMounted(async () => {
   try {
@@ -83,6 +87,13 @@ onMounted(async () => {
   } catch {}
   if (!item.value.title) {
     item.value.title = capitalize(slug)
+  }
+  // Lazy-render markdown content
+  if (item.value.content) {
+    try {
+      const marked = await getMarked()
+      rendered.value = marked.parse(item.value.content)
+    } catch { rendered.value = '' }
   }
 })
 

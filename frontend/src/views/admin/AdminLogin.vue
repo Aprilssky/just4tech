@@ -47,7 +47,6 @@ async function login() {
     })
     const data = await resp.json()
     if (data.ok) {
-      localStorage.setItem('admin_username', form.username)
       router.push('/admin/dashboard')
     } else {
       error.value = data.error || 'Login failed'

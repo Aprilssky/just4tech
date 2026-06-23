@@ -8,6 +8,8 @@ def get_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
 def init_db():
@@ -30,9 +32,13 @@ def init_db():
             author TEXT DEFAULT 'AI Tool Hub Team',
             status TEXT DEFAULT 'published',
             cover_image TEXT DEFAULT '',
+            icon TEXT DEFAULT '',
+            subtitle TEXT DEFAULT '',
+            external_url TEXT DEFAULT '',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+        -- Deprecated: tools are now stored in posts table with category='AI Tool'
         CREATE TABLE IF NOT EXISTS tools (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             slug TEXT UNIQUE NOT NULL,
@@ -44,6 +50,7 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+        -- Deprecated: software now stored in posts table with category='AI Tool'
         CREATE TABLE IF NOT EXISTS software (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             slug TEXT UNIQUE NOT NULL,
@@ -104,6 +111,19 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_visits_path ON page_visits(path);
         CREATE INDEX IF NOT EXISTS idx_visits_date ON page_visits(visited_at);
         CREATE INDEX IF NOT EXISTS idx_visits_country ON page_visits(country);
+        CREATE TABLE IF NOT EXISTS contact_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            email TEXT,
+            subject TEXT,
+            message TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS ai_config (
+            key TEXT PRIMARY KEY,
+            value TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
     """)
     conn.commit()
     conn.close()

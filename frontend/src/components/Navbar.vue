@@ -107,7 +107,7 @@
           <input
             id="search-input"
             v-model="searchQuery"
-            @input="doSearch"
+            @input="doSearchDebounced"
             @keydown.escape="closeSearch"
             @keydown.enter="searchResults.length && goTo(searchResults[0].url)"
             placeholder="Search posts and tools..."
@@ -155,6 +155,7 @@ const searchOpen = ref(false)
 const searchQuery = ref('')
 const searchResults = ref([])
 const searchLoading = ref(false)
+let searchDebounce = null
 
 function onScroll() {
   scrolled.value = window.scrollY > 10
@@ -185,12 +186,25 @@ async function openSearch() {
 }
 
 function closeSearch() {
+  clearTimeout(searchDebounce)
   searchOpen.value = false
   searchResults.value = []
   searchQuery.value = ''
 }
 
 const resultsCount = computed(() => searchResults.value.length)
+
+function doSearchDebounced() {
+  clearTimeout(searchDebounce)
+  const q = searchQuery.value.trim()
+  if (!q) {
+    searchResults.value = []
+    searchLoading.value = false
+    return
+  }
+  searchLoading.value = true
+  searchDebounce = setTimeout(() => doSearch(), 300)
+}
 
 async function doSearch() {
   const q = searchQuery.value.trim().toLowerCase()

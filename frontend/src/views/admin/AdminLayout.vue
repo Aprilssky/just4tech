@@ -32,7 +32,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
-const username = ref(localStorage.getItem('admin_username') || 'Admin')
+const username = ref('Admin')
 
 onMounted(async () => {
   // Verify session is still valid, redirect to login if not
@@ -40,11 +40,9 @@ onMounted(async () => {
     const resp = await fetch('/api/admin/session-status')
     const data = await resp.json()
     if (!data.authenticated) {
-      localStorage.removeItem('admin_username')
       router.push('/admin/login')
     } else if (data.user) {
       username.value = data.user
-      localStorage.setItem('admin_username', data.user)
     }
   } catch {
     // Network error — still show layout, API calls will fail individually
@@ -53,7 +51,6 @@ onMounted(async () => {
 
 async function logout() {
   try { await fetch('/api/admin/logout', { method: 'POST' }) } catch {}
-  localStorage.removeItem('admin_username')
   router.push('/admin/login')
 }
 </script>

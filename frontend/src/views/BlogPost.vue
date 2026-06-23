@@ -144,14 +144,22 @@
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { usePageMeta } from '../utils/meta.js'
 import { useRoute } from 'vue-router'
-import { marked } from 'marked'
 
+let markedModule = null
 let hljsReady = false
+
+async function getMarked() {
+  if (!markedModule) {
+    markedModule = await import('marked')
+  }
+  return markedModule.marked
+}
 
 async function ensureHljs() {
   if (hljsReady) return
   const hljs = await import('highlight.js')
   await import('highlight.js/styles/github-dark.css')
+  const marked = await getMarked()
   marked.setOptions({
     breaks: true,
     gfm: true,
@@ -172,16 +180,21 @@ const slug = route.params.slug
 const post = ref({})
 const loading = ref(true)
 const relatedPosts = ref([])
+const renderedContent = ref('')
 
-const renderedContent = computed(() => {
-  if (!post.value.content) return ''
+async function renderContent() {
+  if (!post.value.content) {
+    renderedContent.value = ''
+    return
+  }
+  const marked = await getMarked()
   let html = marked.parse(post.value.content)
   // Wrap images in clickable links to open full-size in new tab
   html = html.replace(/<img\s+src="([^"]+)"([^>]*)>/g, (match, src, rest) => {
     return `<a href="${src}" target="_blank" class="blog-img-link"><img src="${src}"${rest}></a>`
   })
-  return html
-})
+  renderedContent.value = html
+}
 
 onMounted(async () => {
   try {
@@ -205,6 +218,7 @@ onMounted(async () => {
       relatedPosts.value = all.filter(p => p.slug !== slug).slice(0, 4)
     }
   } catch {}
+  await renderContent()
   loading.value = false
   await nextTick()
   // Lazy-load highlight.js for code blocks

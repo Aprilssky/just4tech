@@ -228,11 +228,6 @@ import { ref, computed, onMounted } from 'vue'
 import IconDisplay from '../components/IconDisplay.vue'
 import { usePageMeta } from '../utils/meta.js'
 
-function escapeXml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
-}
-
-
 const aiTools = ref([])
 const posts = ref([])
 const featuredProjects = ref([])
@@ -250,11 +245,17 @@ const filteredPosts = computed(() => {
 
 
 onMounted(async () => {
-  try { aiTools.value = await (await fetch('/api/software')).json() } catch { aiTools.value = [] }
-  try { posts.value = (await (await fetch('/api/posts')).json()).filter(p => p.status === 'active') } catch { posts.value = [] }
-  try {
-    const all = await (await fetch('/api/projects')).json()
-    featuredProjects.value = all.slice(0, 3)
-  } catch { featuredProjects.value = [] }
+  const [toolsData, postsData, projectsData] = await Promise.allSettled([
+    fetch('/api/software').then(r => r.ok ? r.json() : []),
+    fetch('/api/posts').then(r => r.ok ? r.json() : []),
+    fetch('/api/projects').then(r => r.ok ? r.json() : []),
+  ])
+  aiTools.value = toolsData.status === 'fulfilled' ? toolsData.value : []
+  posts.value = postsData.status === 'fulfilled'
+    ? postsData.value.filter(p => p.status === 'active')
+    : []
+  featuredProjects.value = projectsData.status === 'fulfilled'
+    ? projectsData.value.slice(0, 3)
+    : []
 })
 </script>
