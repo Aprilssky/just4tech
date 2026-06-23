@@ -124,25 +124,27 @@ def _cleanup_expired_sessions():
     for t in expired:
         del SESSIONS[t]
 
+_bcrypt_module = None
+_bcrypt_available = None
+
 def hash_password(password):
     """Hash password with bcrypt. Falls back to salted SHA-256 only if bcrypt is unavailable."""
-    try:
-        import bcrypt
-        _hash_password.bcrypt = bcrypt
-        _hash_password.use_bcrypt = True
-    except ImportError:
-        _hash_password.use_bcrypt = False
+    global _bcrypt_module, _bcrypt_available
+    if _bcrypt_available is None:
+        try:
+            import bcrypt
+            _bcrypt_module = bcrypt
+            _bcrypt_available = True
+        except ImportError:
+            _bcrypt_available = False
 
-    if _hash_password.use_bcrypt:
-        return _hash_password.bcrypt.hashpw(password.encode(), _hash_password.bcrypt.gensalt()).decode()
+    if _bcrypt_available:
+        return _bcrypt_module.hashpw(password.encode(), _bcrypt_module.gensalt()).decode()
     else:
         import hashlib
         import os as _os
         salt = _os.urandom(32).hex()
         return "sha256$" + salt + "$" + hashlib.sha256((salt + password).encode()).hexdigest()
-
-_hash_password.use_bcrypt = None
-_hash_password.bcrypt = None
 
 def verify_password(password, stored_hash):
     """Verify a password against a stored hash. Supports bcrypt and salted SHA-256 (legacy)."""
