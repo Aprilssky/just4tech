@@ -48,10 +48,20 @@ jobs:
       - name: Ensure API_KEY in systemd env
         run: |
           ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-            "sudo mkdir -p /etc/systemd/system/aitoolhub-admin.service.d && \
-             echo '[Service]' | sudo tee /etc/systemd/system/aitoolhub-admin.service.d/override.conf && \
-             echo 'Environment=\"API_KEY=${{ secrets.API_KEY }}\"' | sudo tee -a /etc/systemd/system/aitoolhub-admin.service.d/override.conf && \
-             sudo systemctl daemon-reload"
+            'API_KEY_FILE=/etc/aitoolhub/api_key; \
+             if [ ! -f "$API_KEY_FILE" ]; then \
+               sudo mkdir -p /etc/aitoolhub; \
+               python3 -c "import secrets; print(secrets.token_hex(24))" | sudo tee "$API_KEY_FILE" > /dev/null; \
+               sudo chmod 600 "$API_KEY_FILE"; \
+               echo "Generated new API_KEY"; \
+             else \
+               echo "API_KEY already exists"; \
+             fi; \
+             sudo mkdir -p /etc/systemd/system/aitoolhub-admin.service.d; \
+             printf "[Service]\nEnvironmentFile=/etc/aitoolhub/api_key_env\n" | sudo tee /etc/systemd/system/aitoolhub-admin.service.d/override.conf > /dev/null; \
+             echo "API_KEY=$(sudo cat $API_KEY_FILE)" | sudo tee /etc/aitoolhub/api_key_env > /dev/null; \
+             sudo chmod 600 /etc/aitoolhub/api_key_env; \
+             sudo systemctl daemon-reload'
 
       - name: Restart backend
         run: |
