@@ -5,7 +5,7 @@
     class="rounded object-cover flex-shrink-0 inline-block align-middle"
     loading="lazy" decoding="async" :fetchpriority="fetchpriority"
     @error="onError">
-  <span v-else :style="{ fontSize: size }">{{ icon || fallback }}</span>
+  <span v-else :style="{ fontSize: size }">{{ fallback }}</span>
 </template>
 
 <script setup>
@@ -27,8 +27,7 @@ const isUrl = computed(() => {
 
 const proxyUrl = computed(() => {
   if (!isUrl.value) return ''
-  // Encode the remote URL in base64 for the icon proxy endpoint
-  const encoded = btoa(props.icon.trim())
+  const encoded = encodeURIComponent(props.icon.trim())
   return `/api/icon-proxy?url=${encoded}`
 })
 

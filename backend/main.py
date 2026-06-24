@@ -2,8 +2,8 @@ import uuid
 import json
 import os as _os
 import hashlib
-import base64
 import asyncio
+from urllib.parse import unquote
 from datetime import datetime, date, timedelta
 from functools import wraps
 
@@ -490,16 +490,13 @@ ICON_FETCH_TIMEOUT = 5.0    # seconds
 @app.get("/api/icon-proxy")
 async def api_icon_proxy(url: str = ""):
     """Proxy external icon URLs through our domain with disk caching.
-    Pass the remote URL as a base64-encoded `url` query parameter.
+    Pass the remote URL as a URL-encoded `url` query parameter.
     """
     if not url:
-        raise HTTPException(status_code=400, detail="Missing `url` query parameter (base64-encoded)")
+        raise HTTPException(status_code=400, detail="Missing `url` query parameter")
 
     # Decode the remote URL
-    try:
-        remote_url = base64.urlsafe_b64decode(url).decode("utf-8")
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid base64 encoding")
+    remote_url = unquote(url)
 
     # Only allow http/https
     if not remote_url.startswith(("http://", "https://")):
