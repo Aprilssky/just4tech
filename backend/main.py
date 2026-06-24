@@ -441,7 +441,7 @@ async def _prewarm_icon_cache():
             cached += 1
             continue
         try:
-            async with httpx.AsyncClient(timeout=ICON_FETCH_TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=ICON_FETCH_TIMEOUT, headers=ICON_FETCH_HEADERS) as client:
                 resp = await client.get(remote_url, follow_redirects=True)
                 if resp.status_code == 200:
                     body = resp.read()
@@ -486,6 +486,10 @@ async def api_software_by_slug(slug: str):
 ICON_CACHE_DIR = _os.path.join(_os.path.dirname(__file__), "static", "icon-cache")
 ICON_MAX_SIZE = 512 * 1024  # 512 KiB max per icon
 ICON_FETCH_TIMEOUT = 5.0    # seconds
+ICON_FETCH_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (compatible; Just4Tech/1.0; +https://just4.tech)",
+    "Accept": "image/avif,image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5",
+}
 
 @app.get("/api/icon-proxy")
 async def api_icon_proxy(url: str = ""):
@@ -516,7 +520,7 @@ async def api_icon_proxy(url: str = ""):
 
     # Fetch from remote
     try:
-        async with httpx.AsyncClient(timeout=ICON_FETCH_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=ICON_FETCH_TIMEOUT, headers=ICON_FETCH_HEADERS) as client:
             resp = await client.get(remote_url, follow_redirects=True)
             if resp.status_code != 200:
                 raise HTTPException(status_code=404, detail=f"Remote icon returned {resp.status_code}")
