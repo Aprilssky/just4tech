@@ -1,6 +1,8 @@
 import uuid
 import json
 import os as _os
+import hashlib
+import base64
 from datetime import datetime, date, timedelta
 from functools import wraps
 
@@ -8,6 +10,7 @@ from fastapi import FastAPI, Request, HTTPException, Header
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from jinja2 import Environment, FileSystemLoader
+import httpx
 
 from database import get_db, init_db
 
@@ -433,6 +436,80 @@ async def api_software_by_slug(slug: str):
     return dict(sw)
 
 
+# ── Icon proxy: fetch + cache external tool icons ──
+ICON_CACHE_DIR = _os.path.join(_os.path.dirname(__file__), "static", "icon-cache")
+ICON_MAX_SIZE = 512 * 1024  # 512 KiB max per icon
+ICON_FETCH_TIMEOUT = 5.0    # seconds
+
+@app.get("/api/icon-proxy")
+async def api_icon_proxy(url: str = ""):
+    """Proxy external icon URLs through our domain with disk caching.
+    Pass the remote URL as a base64-encoded `url` query parameter.
+    """
+    if not url:
+        raise HTTPException(status_code=400, detail="Missing `url` query parameter (base64-encoded)")
+
+    # Decode the remote URL
+    try:
+        remote_url = base64.urlsafe_b64decode(url).decode("utf-8")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 encoding")
+
+    # Only allow http/https
+    if not remote_url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="Only http/https URLs are allowed")
+
+    # Hash the URL → cache key
+    cache_key = hashlib.sha256(remote_url.encode()).hexdigest()
+    cache_path = _os.path.join(ICON_CACHE_DIR, cache_key)
+
+    # Serve from disk cache if available
+    if _os.path.exists(cache_path):
+        content_type = _guess_mime_from_path(cache_path)
+        return Response(
+            content=open(cache_path, "rb").read(),
+            media_type=content_type,
+            headers={"Cache-Control": "public, max-age=604800"},
+        )
+
+    # Fetch from remote
+    try:
+        async with httpx.AsyncClient(timeout=ICON_FETCH_TIMEOUT) as client:
+            resp = await client.get(remote_url, follow_redirects=True)
+            if resp.status_code != 200:
+                raise HTTPException(status_code=404, detail=f"Remote icon returned {resp.status_code}")
+            body = resp.read()
+            if len(body) > ICON_MAX_SIZE:
+                raise HTTPException(status_code=400, detail="Remote icon exceeds size limit")
+    except httpx.RequestError:
+        raise HTTPException(status_code=502, detail="Failed to fetch remote icon")
+
+    content_type = resp.headers.get("content-type", "image/png")
+
+    # Write to disk cache
+    _os.makedirs(ICON_CACHE_DIR, exist_ok=True)
+    with open(cache_path, "wb") as f:
+        f.write(body)
+
+    return Response(
+        content=body,
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=604800"},
+    )
+
+
+def _guess_mime_from_path(path: str) -> str:
+    """Guess MIME type from file extension."""
+    ext = _os.path.splitext(path)[1].lower()
+    return {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+        ".svg": "image/svg+xml",
+        ".ico": "image/x-icon",
+    }.get(ext, "image/png")
 
 
 @app.get("/api/projects")

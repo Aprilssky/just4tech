@@ -37,7 +37,7 @@ jobs:
       - name: Deploy backend
         run: |
           rsync -avz backend/ ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/home/ubuntu/aitoolhub-admin/ \
-            --exclude '__pycache__' --exclude '*.bak*' --exclude 'data/' --exclude 'static/uploads'
+            --exclude '__pycache__' --exclude '*.bak*' --exclude 'data/' --exclude 'static/uploads' --exclude 'static/icon-cache/'
 
       - name: Install Python dependencies
         run: |

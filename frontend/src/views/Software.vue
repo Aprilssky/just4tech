@@ -16,7 +16,7 @@
         <div v-if="tools.length" class="tool-grid">
           <router-link v-for="t in tools" :key="t.slug" :to="'/aitools/' + t.slug"
             class="tool-card no-underline block">
-            <IconDisplay :icon="t.icon" fallback="🤖" size="2rem" />
+            <IconDisplay :icon="t.icon" fallback="🤖" size="2rem" fetchpriority="low" />
             <h3 class="text-lg font-bold text-slate-900 dark:text-white mb-2">{{ t.title }}</h3>
             <div class="flex flex-wrap gap-2 mb-2">
               <span v-if="t.category" class="text-xs px-2 py-0.5 rounded-full" style="background:var(--color-brand-lightest);color:var(--color-brand)">AI Tool</span>
