@@ -71,6 +71,7 @@ _cache = {}
 def cached(key: str, ttl_seconds: int = 300):
     """Decorator: cache response for `ttl_seconds`. Keyed by `key`."""
     def decorator(func):
+        @wraps(func)
         async def wrapper(*args, **kwargs):
             entry = _cache.get(key)
             if entry and (datetime.now() - entry["ts"]).total_seconds() < ttl_seconds:
