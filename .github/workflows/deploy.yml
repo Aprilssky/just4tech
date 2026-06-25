@@ -57,11 +57,11 @@ jobs:
             read -r NEW_KEY
             if [ -n "$NEW_KEY" ]; then
               echo "$NEW_KEY" | sudo tee "$API_KEY_FILE" > /dev/null
-              sudo chmod 600 "$API_KEY_FILE"
+              sudo chmod 644 "$API_KEY_FILE"
               echo "Using API_KEY from GitHub secrets"
             elif [ ! -f "$API_KEY_FILE" ]; then
               python3 -c "import secrets; print(secrets.token_hex(24))" | sudo tee "$API_KEY_FILE" > /dev/null
-              sudo chmod 600 "$API_KEY_FILE"
+              sudo chmod 644 "$API_KEY_FILE"
               echo "Generated new random API_KEY"
             else
               echo "API_KEY unchanged"
@@ -74,7 +74,7 @@ jobs:
             sudo mkdir -p /etc/systemd/system/aitoolhub-admin.service.d
             printf "[Service]\nEnvironmentFile=/etc/aitoolhub/api_key_env\n" | sudo tee /etc/systemd/system/aitoolhub-admin.service.d/override.conf > /dev/null
             echo "API_KEY=$(sudo cat $API_KEY_FILE)" | sudo tee /etc/aitoolhub/api_key_env > /dev/null
-            sudo chmod 600 /etc/aitoolhub/api_key_env
+            sudo chmod 644 /etc/aitoolhub/api_key_env
             sudo systemctl daemon-reload
             echo "systemd env configured"'
 
