@@ -430,27 +430,6 @@ async def api_stats_overview(request: Request):
         "daily_views": [dict(d) for d in daily_views],
     }
 
-@app.get("/api/debug/key-loaded")
-async def debug_key_loaded():
-    """Return whether the API key was loaded (no value exposed)."""
-    key_file = "/etc/aitoolhub/api_key"
-    file_exists = _os.path.isfile(key_file)
-    file_readable = file_len = 0
-    if file_exists:
-        try:
-            file_readable = _os.access(key_file, _os.R_OK)
-            file_len = _os.path.getsize(key_file)
-        except Exception:
-            pass
-    return {
-        "key_loaded": bool(API_KEY),
-        "key_length": len(API_KEY) if API_KEY else 0,
-        "source": "env" if (_os.environ.get("API_KEY") or _os.environ.get("MCP_API_KEY")) else "file" if file_exists else "none",
-        "file_exists": file_exists,
-        "file_readable": file_readable,
-        "file_size": file_len,
-    }
-
 @app.on_event("startup")
 async def startup():
     init_db()
