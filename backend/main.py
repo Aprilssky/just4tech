@@ -72,11 +72,11 @@ def cached(key: str, ttl_seconds: int = 300):
     """Decorator: cache response for `ttl_seconds`. Keyed by `key`."""
     def decorator(func):
         @wraps(func)
-        async def wrapper(*args, **kwargs):
+        async def wrapper():
             entry = _cache.get(key)
             if entry and (datetime.now() - entry["ts"]).total_seconds() < ttl_seconds:
                 return entry["data"]
-            result = await func(*args, **kwargs)
+            result = await func()
             _cache[key] = {"ts": datetime.now(), "data": result}
             return result
         return wrapper
