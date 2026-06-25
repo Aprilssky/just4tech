@@ -142,7 +142,7 @@
 
 <script setup>
 import { ref, computed, onMounted, nextTick } from 'vue'
-import { usePageMeta } from '../utils/meta.js'
+import { usePageMeta, useJsonLd } from '../utils/meta.js'
 import { useRoute } from 'vue-router'
 
 let markedModule = null
@@ -202,7 +202,26 @@ onMounted(async () => {
     if (res.ok) {
       const data = await res.json()
       post.value = data
-      usePageMeta({title: data.title, description: data.excerpt, image: data.cover_image})
+      const postUrl = `https://just4.tech/blog/${data.slug || slug}`
+      usePageMeta({
+        title: data.title,
+        description: data.excerpt,
+        image: data.cover_image,
+        canonical: postUrl,
+        type: 'article',
+      })
+      useJsonLd({
+        '@context': 'https://schema.org',
+        '@type': 'Article',
+        headline: data.title,
+        description: data.excerpt,
+        image: data.cover_image || 'https://just4.tech/images/fastapi-cover.webp',
+        datePublished: data.created_at,
+        dateModified: data.updated_at || data.created_at,
+        author: { '@type': 'Person', name: data.author || 'Just4Tech' },
+        publisher: { '@type': 'Organization', name: 'Just4Tech', url: 'https://just4.tech/' },
+        url: postUrl,
+      })
     }
   } catch { /* fallback */ }
   if (!post.value.title) {
