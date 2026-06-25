@@ -17,7 +17,24 @@ import httpx
 from database import get_db, init_db
 
 # ===== API Key Auth for machine-to-machine calls =====
-API_KEY = _os.environ.get("API_KEY", _os.environ.get("MCP_API_KEY"))
+# Priority: env var → key file (set by GitHub Actions deploy) → MCP_API_KEY
+def _load_api_key() -> str:
+    key = _os.environ.get("API_KEY") or _os.environ.get("MCP_API_KEY")
+    if key:
+        return key
+    # Try the key file written by CI/CD pipeline
+    key_file = "/etc/aitoolhub/api_key"
+    if _os.path.isfile(key_file):
+        try:
+            with open(key_file) as f:
+                key = f.read().strip()
+            if key:
+                return key
+        except Exception:
+            pass
+    return ""
+
+API_KEY = _load_api_key()
 if not API_KEY:
     raise RuntimeError(
         "API_KEY environment variable is required. "
