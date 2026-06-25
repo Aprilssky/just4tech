@@ -46,26 +46,33 @@ jobs:
             "cd /home/ubuntu/aitoolhub-admin && sudo pip install -r requirements.txt"
 
       - name: Ensure API_KEY in systemd env
+        env:
+          FIXED_KEY: ${{ secrets.JUST4TECH_API_KEY }}
         run: |
-          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-            'API_KEY_FILE=/etc/aitoolhub/api_key; \
-             sudo mkdir -p /etc/aitoolhub; \
-             if [ -n "${{ secrets.JUST4TECH_API_KEY }}" ]; then \
-               echo "${{ secrets.JUST4TECH_API_KEY }}" | sudo tee "$API_KEY_FILE" > /dev/null; \
-               sudo chmod 600 "$API_KEY_FILE"; \
-               echo "Using API_KEY from GitHub secrets"; \
-             elif [ ! -f "$API_KEY_FILE" ]; then \
-               python3 -c "import secrets; print(secrets.token_hex(24))" | sudo tee "$API_KEY_FILE" > /dev/null; \
-               sudo chmod 600 "$API_KEY_FILE"; \
-               echo "Generated new random API_KEY (set JUST4TECH_API_KEY secret to override)"; \
-             else \
-               echo "API_KEY unchanged"; \
-             fi; \
-             sudo mkdir -p /etc/systemd/system/aitoolhub-admin.service.d; \
-             printf "[Service]\nEnvironmentFile=/etc/aitoolhub/api_key_env\n" | sudo tee /etc/systemd/system/aitoolhub-admin.service.d/override.conf > /dev/null; \
-             echo "API_KEY=$(sudo cat $API_KEY_FILE)" | sudo tee /etc/aitoolhub/api_key_env > /dev/null; \
-             sudo chmod 600 /etc/aitoolhub/api_key_env; \
-             sudo systemctl daemon-reload'
+          echo "${FIXED_KEY}" | ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} /bin/bash -s << 'REMOTE_SCRIPT'
+          set -e
+          API_KEY_FILE=/etc/aitoolhub/api_key
+          sudo mkdir -p /etc/aitoolhub
+
+          read -r NEW_KEY
+          if [ -n "$NEW_KEY" ]; then
+            echo "$NEW_KEY" | sudo tee "$API_KEY_FILE" > /dev/null
+            sudo chmod 600 "$API_KEY_FILE"
+            echo "Using API_KEY from GitHub secrets"
+          elif [ ! -f "$API_KEY_FILE" ]; then
+            python3 -c "import secrets; print(secrets.token_hex(24))" | sudo tee "$API_KEY_FILE" > /dev/null
+            sudo chmod 600 "$API_KEY_FILE"
+            echo "Generated new random API_KEY"
+          else
+            echo "API_KEY unchanged"
+          fi
+
+          sudo mkdir -p /etc/systemd/system/aitoolhub-admin.service.d
+          printf "[Service]\nEnvironmentFile=/etc/aitoolhub/api_key_env\n" | sudo tee /etc/systemd/system/aitoolhub-admin.service.d/override.conf > /dev/null
+          echo "API_KEY=$(sudo cat $API_KEY_FILE)" | sudo tee /etc/aitoolhub/api_key_env > /dev/null
+          sudo chmod 600 /etc/aitoolhub/api_key_env
+          sudo systemctl daemon-reload
+          REMOTE_SCRIPT
 
       - name: Restart backend
         run: |
