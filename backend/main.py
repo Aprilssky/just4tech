@@ -17,12 +17,9 @@ import httpx
 from database import get_db, init_db
 
 # ===== API Key Auth for machine-to-machine calls =====
-# Priority: env var → key file (set by GitHub Actions deploy) → MCP_API_KEY
+# Priority: key file (set by deploy) → API_KEY env → MCP_API_KEY env
 def _load_api_key() -> str:
-    key = _os.environ.get("API_KEY") or _os.environ.get("MCP_API_KEY")
-    if key:
-        return key
-    # Try the key file written by CI/CD pipeline
+    # 1. Key file — most authoritative, written by CI/CD pipeline
     key_file = "/etc/aitoolhub/api_key"
     if _os.path.isfile(key_file):
         try:
@@ -32,6 +29,10 @@ def _load_api_key() -> str:
                 return key
         except Exception:
             pass
+    # 2. Environment variables (fallback for local dev)
+    key = _os.environ.get("API_KEY") or _os.environ.get("MCP_API_KEY")
+    if key:
+        return key
     return ""
 
 API_KEY = _load_api_key()
