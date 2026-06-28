@@ -1,0 +1,7 @@
+# Google AdSense
+# Replace PUB_ID with your actual publisher ID after AdSense approval
+# Format: google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0
+google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0
+
+# For reference — real values look like:
+# google.com, pub-1234567890123456, DIRECT, f08c47fec0942fa0

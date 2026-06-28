@@ -4,7 +4,7 @@ from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import HTMLResponse
 
 from database import get_db
-from auth import check_session
+from auth import check_session, require_api_key
 
 router = APIRouter(tags=["pages"])
 
@@ -48,7 +48,7 @@ async def get_page(page_id: int, request: Request):
 @router.put("/api/pages/{page_id}")
 async def update_page(page_id: int, request: Request):
     user = check_session(request)
-    if not user:
+    if not user and not require_api_key(request):
         raise HTTPException(status_code=401, detail="Authentication required")
     data = await request.json()
     conn = get_db()
