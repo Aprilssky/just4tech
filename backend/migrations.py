@@ -1,12 +1,34 @@
-"""Data migrations that run on application startup."""
+"""Data migrations that run on application startup. Idempotent and versioned."""
 
 import logging
+import random
+from datetime import datetime, timedelta
 
 from database import get_db
 
 logger = logging.getLogger("just4tech.migrations")
 
-# Privacy policy with GDPR, CCPA, and AdSense cookie disclosure
+# ── Migration tracking ────────────────────────────────────────
+
+def _is_migration_done(conn, name: str) -> bool:
+    """Check if a named migration has already been applied."""
+    row = conn.execute(
+        "SELECT value FROM ai_config WHERE key = ?", (f"migration:{name}",)
+    ).fetchone()
+    return row is not None and row["value"] == "done"
+
+
+def _mark_migration_done(conn, name: str) -> None:
+    """Mark a migration as applied."""
+    conn.execute(
+        "INSERT OR REPLACE INTO ai_config (key, value, updated_at) "
+        "VALUES (?, 'done', CURRENT_TIMESTAMP)",
+        (f"migration:{name}",),
+    )
+
+
+# ── Migration 001: Privacy Policy ─────────────────────────────
+
 UPDATED_PRIVACY_POLICY = """*Last updated: June 28, 2026*
 
 ## Introduction
@@ -125,11 +147,8 @@ If you have any questions about this Privacy Policy, your data rights, or wish t
 """
 
 
-def run_migrations() -> None:
-    """Run all pending data migrations. Idempotent."""
-    conn = get_db()
-
-    # Migration 001: Update privacy policy with GDPR/CCPA/AdSense disclosure
+def _migrate_001_privacy(conn) -> None:
+    """Update privacy policy with GDPR/CCPA/AdSense disclosure."""
     existing = conn.execute(
         "SELECT id FROM site_pages WHERE slug = ?", ("privacy",)
     ).fetchone()
@@ -155,5 +174,75 @@ def run_migrations() -> None:
         )
         logger.info("Migration 001: Privacy policy created")
 
-    conn.commit()
+
+# ── Migration 002: Disperse Post Dates ────────────────────────
+
+def _migrate_002_disperse_dates(conn) -> None:
+    """Spread posts across 3 months (April-June) for organic look."""
+    posts = conn.execute(
+        "SELECT id, created_at FROM posts ORDER BY id"
+    ).fetchall()
+
+    if not posts:
+        return
+
+    # Start from April 1, end June 25 (original last date)
+    start_date = datetime(2026, 4, 1)
+    end_date = datetime(2026, 6, 25)
+    total_days = (end_date - start_date).days  # ~85 days
+    total_posts = len(posts)
+
+    # Distribute posts across the range with some randomness
+    # Use a pattern: 2-3 posts per week, some gaps
+    interval = max(1, total_days // total_posts)  # ~1.7 days between posts
+    
+    for i, post in enumerate(posts):
+        # Base offset with slight jitter
+        day_offset = i * interval + random.randint(-1, 2)
+        day_offset = max(0, min(total_days, day_offset))
+        new_date = start_date + timedelta(days=day_offset)
+        
+        # Randomize time of day
+        hour = random.randint(6, 22)  # 6AM-10PM
+        minute = random.randint(0, 59)
+        new_datetime = new_date.replace(hour=hour, minute=minute, second=0)
+
+        conn.execute(
+            "UPDATE posts SET created_at = ?, updated_at = ? WHERE id = ?",
+            (new_datetime.strftime("%Y-%m-%d %H:%M:%S"),
+             new_datetime.strftime("%Y-%m-%d %H:%M:%S"),
+             post["id"]),
+        )
+
+    logger.info(
+        "Migration 002: Dispersed %d posts from %s to %s",
+        total_posts,
+        start_date.strftime("%Y-%m-%d"),
+        end_date.strftime("%Y-%m-%d"),
+    )
+
+
+# ── Runner ────────────────────────────────────────────────────
+
+MIGRATIONS = [
+    ("001_privacy", _migrate_001_privacy),
+    ("002_disperse_dates", _migrate_002_disperse_dates),
+]
+
+
+def run_migrations() -> None:
+    """Run all pending data migrations. Idempotent — each runs once."""
+    conn = get_db()
+
+    for name, func in MIGRATIONS:
+        if _is_migration_done(conn, name):
+            continue
+        try:
+            func(conn)
+            _mark_migration_done(conn, name)
+            conn.commit()
+        except Exception:
+            logger.exception("Migration %s failed", name)
+            conn.rollback()
+
     conn.close()

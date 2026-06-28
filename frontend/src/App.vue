@@ -8,6 +8,7 @@
     </router-view>
     <Footer />
     <BackToTop />
+    <CookieBanner />
   </div>
 </template>
 
@@ -17,6 +18,7 @@ import { useRouter } from 'vue-router'
 import Navbar from './components/Navbar.vue'
 import Footer from './components/Footer.vue'
 import BackToTop from './components/BackToTop.vue'
+import CookieBanner from './components/CookieBanner.vue'
 import { playClick, isSoundEnabled } from './utils/sound.js'
 
 let revealObserver = null

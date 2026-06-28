@@ -93,6 +93,7 @@ class TestProjects:
             "INSERT INTO posts (slug, title, content, status, category) VALUES (?, ?, ?, ?, ?)",
             ("my-proj", "My Project", "Details", "active", "Project"),
         )
+        conn.commit()
         conn.close()
 
         resp = client.get("/api/projects")

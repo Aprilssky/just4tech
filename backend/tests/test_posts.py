@@ -90,11 +90,11 @@ class TestPostsAuthenticated:
         # Create first
         client.post(
             "/api/posts",
-            json={"slug": "my-post", "title": "My Post", "content": "Test content"},
+            json={"slug": "my-post", "title": "My Post", "content": "Test content", "status": "active"},
             headers={"Cookie": cookie},
         )
 
-        # Get by ID
+        # Get by ID (needs auth for non-active posts)
         resp = client.get("/api/posts/1")
         assert resp.status_code == 200
         data = resp.json()
@@ -106,7 +106,7 @@ class TestPostsAuthenticated:
 
         client.post(
             "/api/posts",
-            json={"slug": "slug-post", "title": "Slug", "content": "X"},
+            json={"slug": "slug-post", "title": "Slug", "content": "X", "status": "active"},
             headers={"Cookie": cookie},
         )
 
@@ -119,7 +119,7 @@ class TestPostsAuthenticated:
 
         client.post(
             "/api/posts",
-            json={"slug": "upd", "title": "Old", "content": "Old"},
+            json={"slug": "upd", "title": "Old", "content": "Old", "status": "active"},
             headers={"Cookie": cookie},
         )
 

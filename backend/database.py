@@ -8,23 +8,13 @@ from config import DB_PATH
 
 logger = logging.getLogger("just4tech.database")
 
-# For in-memory databases, use shared cache so multiple connections
-# see the same data (required for testing with connection-per-request).
-_IS_MEMORY = DB_PATH == ":memory:"
-_MEMORY_URI = "file::memory:?cache=shared"
 
-
-def get_db() -> sqlite3.Connection:
+def get_db():
     """Get a SQLite connection with WAL mode and foreign keys enabled."""
-    if _IS_MEMORY:
-        conn = sqlite3.connect(_MEMORY_URI, uri=True)
-    else:
-        Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(str(DB_PATH))
-
+    Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
-    if not _IS_MEMORY:
-        conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
