@@ -11,18 +11,41 @@
 
 ```
 just4tech/
-├── frontend/          Vue 3 SPA (Vite 8, Tailwind CSS 4, Vue Router)
-│   ├── src/views/      Page components + admin/
-│   ├── src/components/  Navbar, Footer, IconDisplay, BackToTop
-│   ├── src/api/         API client helpers
-│   ├── src/utils/       sound.js, meta.js
+├── frontend/              Vue 3 SPA (Vite 8, Tailwind CSS 4, Vue Router)
+│   ├── src/views/          Page components + admin/
+│   ├── src/components/     Navbar, Footer, IconDisplay, BackToTop
+│   ├── src/api/            API client helpers
+│   ├── src/utils/          sound.js, meta.js
 │   └── vite.config.js
-├── backend/           Python FastAPI (port 8083, SQLite)
-│   ├── main.py          All routes (monolithic, ~870 lines)
-│   ├── database.py      SQLite schema + connection
+├── backend/               Python FastAPI (port 8083, SQLite) — MODULAR
+│   ├── main.py             App creation + startup (~90 lines, was ~1157)
+│   ├── config.py           All settings, no hardcoded paths
+│   ├── auth.py             API key, sessions, password hashing, rate limiting
+│   ├── cache.py            In-memory TTL cache
+│   ├── database.py         SQLite connection + schema
+│   ├── middleware.py        Page view tracking middleware
+│   ├── dependencies.py     FastAPI dependency injection
+│   ├── routes/             Route modules (10 files)
+│   │   ├── posts.py         Posts CRUD (8 routes)
+│   │   ├── admin.py         Login, dashboard, analytics (9 routes)
+│   │   ├── pages.py         Static pages (6 routes)
+│   │   ├── media.py         Upload/list/delete (3 routes)
+│   │   ├── contact.py       Contact form (3 routes)
+│   │   ├── software.py      AI tools (3 routes)
+│   │   ├── projects.py      Projects (2 routes)
+│   │   ├── content.py       Content blocks (5 routes)
+│   │   ├── icon_proxy.py    Icon proxy + prewarm (1 route)
+│   │   └── sitemap.py       RSS + Sitemap (2 routes)
+│   ├── tests/              pytest test suite (40+ tests)
+│   │   ├── conftest.py      Fixtures (in-memory DB, TestClient)
+│   │   ├── test_auth.py     Auth: passwords, sessions, rate limits, endpoints
+│   │   ├── test_posts.py    Posts CRUD, pagination, permissions
+│   │   └── test_routes.py   Icon proxy, RSS, sitemap, contact, projects
 │   └── requirements.txt
+├── Dockerfile             Multi-stage: Node build + Python runtime
+├── docker-compose.yml     Local dev with persistent volumes
 └── .github/workflows/
-    └── deploy.yml     CI/CD pipeline
+    └── deploy.yml         CI/CD pipeline
 ```
 
 ## Local Development
@@ -35,7 +58,15 @@ npm run dev              # → http://localhost:5173
 
 # Backend
 cd backend
-DEV_MODE=1 python3 main.py   # DEV_MODE=1 disables secure cookies
+pip install -r requirements.txt
+API_KEY=*** DEV_MODE=1 python3 main.py   # DEV_MODE=1 disables secure cookies
+
+# Docker
+docker compose up --build
+
+# Run tests
+cd backend
+python3 -m pytest tests/ -v
 ```
 
 ## Build

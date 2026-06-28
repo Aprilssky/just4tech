@@ -1,0 +1,18 @@
+# Docker Compose for local development
+services:
+  backend:
+    build: .
+    ports:
+      - "8083:8083"
+    environment:
+      - API_KEY=dev-api-key-change-in-production
+      - DEV_MODE=1
+      - DB_PATH=/app/data/aitoolhub.db
+    volumes:
+      - db-data:/app/data
+      - uploads:/app/static/uploads
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  uploads:

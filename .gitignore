@@ -20,3 +20,4 @@ backend/fix_all.py
 .DS_Store
 Thumbs.db
 backend/.mcp_key
+__pycache__/

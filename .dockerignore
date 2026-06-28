@@ -1,0 +1,16 @@
+# Dependencies
+__pycache__/
+*.pyc
+*.pyo
+data/
+*.db
+static/uploads/*
+!static/uploads/.gitkeep
+static/icon-cache/*
+.env
+*.bak*
+.pytest_cache/
+dist/
+node_modules/
+venv/
+.venv/

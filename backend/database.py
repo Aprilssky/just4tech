@@ -1,18 +1,36 @@
+"""Database connection and schema management for Just4Tech."""
+
 import sqlite3
-import os
-from datetime import datetime
+import logging
+from pathlib import Path
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "data", "aitoolhub.db")
+from config import DB_PATH
 
-def get_db():
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+logger = logging.getLogger("just4tech.database")
+
+# For in-memory databases, use shared cache so multiple connections
+# see the same data (required for testing with connection-per-request).
+_IS_MEMORY = DB_PATH == ":memory:"
+_MEMORY_URI = "file::memory:?cache=shared"
+
+
+def get_db() -> sqlite3.Connection:
+    """Get a SQLite connection with WAL mode and foreign keys enabled."""
+    if _IS_MEMORY:
+        conn = sqlite3.connect(_MEMORY_URI, uri=True)
+    else:
+        Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(DB_PATH))
+
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
+    if not _IS_MEMORY:
+        conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
-def init_db():
+
+def init_db() -> None:
+    """Initialize database schema. Idempotent — uses IF NOT EXISTS."""
     conn = get_db()
     c = conn.cursor()
     c.executescript("""
@@ -21,6 +39,7 @@ def init_db():
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL
         );
+
         CREATE TABLE IF NOT EXISTS posts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             slug TEXT UNIQUE NOT NULL,
@@ -38,37 +57,7 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
-        -- Deprecated: tools are now stored in posts table with category='AI Tool'
-        CREATE TABLE IF NOT EXISTS tools (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            slug TEXT UNIQUE NOT NULL,
-            name TEXT NOT NULL,
-            description TEXT NOT NULL,
-            content TEXT DEFAULT '',
-            icon TEXT DEFAULT '',
-            status TEXT DEFAULT 'active',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        -- Deprecated: software now stored in posts table with category='AI Tool'
-        CREATE TABLE IF NOT EXISTS software (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            slug TEXT UNIQUE NOT NULL,
-            name TEXT NOT NULL,
-            description TEXT DEFAULT "",
-            long_description TEXT DEFAULT "",
-            website_url TEXT DEFAULT "",
-            download_url TEXT DEFAULT "",
-            tags TEXT DEFAULT "",
-            category TEXT DEFAULT "",
-            platform TEXT DEFAULT "",
-            price TEXT DEFAULT "",
-            icon TEXT DEFAULT "",
-            featured INTEGER DEFAULT 0,
-            status TEXT DEFAULT "active",
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
+
         CREATE TABLE IF NOT EXISTS site_pages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             slug TEXT UNIQUE NOT NULL,
@@ -78,6 +67,7 @@ def init_db():
             meta_description TEXT DEFAULT '',
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+
         CREATE TABLE IF NOT EXISTS content_blocks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             page_path TEXT NOT NULL,
@@ -87,6 +77,7 @@ def init_db():
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(page_path, block_key)
         );
+
         CREATE TABLE IF NOT EXISTS page_views (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             path TEXT NOT NULL,
@@ -94,6 +85,7 @@ def init_db():
             count INTEGER DEFAULT 1,
             UNIQUE(path, date)
         );
+
         CREATE TABLE IF NOT EXISTS page_visits (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             path TEXT NOT NULL,
@@ -111,6 +103,7 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_visits_path ON page_visits(path);
         CREATE INDEX IF NOT EXISTS idx_visits_date ON page_visits(visited_at);
         CREATE INDEX IF NOT EXISTS idx_visits_country ON page_visits(country);
+
         CREATE TABLE IF NOT EXISTS contact_messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT,
@@ -119,6 +112,7 @@ def init_db():
             message TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+
         CREATE TABLE IF NOT EXISTS ai_config (
             key TEXT PRIMARY KEY,
             value TEXT,
@@ -127,3 +121,4 @@ def init_db():
     """)
     conn.commit()
     conn.close()
+    logger.info("Database initialized at %s", DB_PATH)
