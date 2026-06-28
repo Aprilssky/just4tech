@@ -79,6 +79,8 @@ for router in routers:
 @app.on_event("startup")
 async def startup():
     init_db()
+    from migrations import run_migrations
+    run_migrations()
     logger.info("API_KEY loaded (%d chars)", len(API_KEY))
     # Pre-warm icon cache in background
     from routes.icon_proxy import prewarm_icon_cache
