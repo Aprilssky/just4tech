@@ -242,21 +242,43 @@ async def migration_status():
     return get_migration_status()
 
 
-@router.post("/api/admin/migration-rerun")
-async def migration_rerun(request: Request):
-    """Force re-run a migration. Requires API key or admin session."""
+@router.post("/api/admin/disperse-dates")
+async def disperse_dates(request: Request):
+    """Force-disperse post dates across 3 months. Requires session or API key."""
     from auth import check_session, require_api_key
     if not check_session(request) and not require_api_key(request):
         raise HTTPException(status_code=401, detail="Authentication required")
-    data = await request.json()
-    name = data.get("name", "")
-    from migrations import run_migrations
-    from database import get_db
+    
+    import random
+    from datetime import datetime, timedelta
+    
     conn = get_db()
-    # Reset the migration flag so it runs again
-    conn.execute("DELETE FROM ai_config WHERE key = ?", (f"migration:{name}",))
+    posts = conn.execute("SELECT id FROM posts ORDER BY id").fetchall()
+    if not posts:
+        conn.close()
+        return {"ok": False, "error": "No posts"}
+
+    start = datetime(2026, 4, 1)
+    end = datetime(2026, 6, 25)
+    days = (end - start).days
+    n = len(posts)
+    interval = max(1, days // n)
+
+    updated = 0
+    for i, p in enumerate(posts):
+        offset = min(days, i * interval + random.randint(-1, 2))
+        new_dt = (start + timedelta(days=max(0, offset))).replace(
+            hour=random.randint(6, 22), minute=random.randint(0, 59), second=0
+        )
+        ts = new_dt.strftime("%Y-%m-%d %H:%M:%S")
+        conn.execute("UPDATE posts SET created_at=?, updated_at=? WHERE id=?",
+                     (ts, ts, p["id"]))
+        updated += 1
+
     conn.commit()
     conn.close()
-    run_migrations()
+
+    # Verify
     from migrations import get_migration_status
-    return get_migration_status()
+    status = get_migration_status()
+    return {"ok": True, "updated": updated, **status}
